@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App</title>
+</head>
+<body>
+    
+    <input type="text" id="receiverId" placeholder="Receiver Id">
+    <br><br>
+    <input type="file" id="inputData">
+    <button onclick="generate()">Click</button>
+    <br><br>
+    <div style="width: 800px;padding:10px;border-radius:10px;background-color: #f6f7f8;">
+        <img src="" style="width: 100%;" id="message" alt="">
+    </div>
+
+
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    
+        <div style="width:80%;background: grey;margin: auto;">
+            <video id="video" autoplay playsinline muted></video>
+        </div>
+        <div style="width:80%;margin: auto;padding-top:10px ;">
+            <button class="btn btn-primary" id="start"> Start Screen Sharing</button>
+            <button class="btn btn-secondary" id="stop"> Stop</button>
+        </div>
+
+</body>
+</html>
+<script src='https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.js'></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+
+const url = "http://localhost:3000";
+
+var navigator_info = window.navigator;
+var screen_info = window.screen;
+var uid = navigator_info.mimeTypes.length;
+uid += navigator_info.userAgent.replace(/\D+/g, '');
+uid += navigator_info.plugins.length;
+uid += screen_info.height || '';
+uid += screen_info.width || '';
+uid += screen_info.pixelDepth || '';
+console.log(uid);
+
+const socket = io.connect(url, { query: "user_id="+uid+"" });
+document.getElementById('inputData').addEventListener('change', (event)=>{
+
+    function getBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = error => reject(error);
+        });
+    }
+    var file = event.target.files[0];
+    getBase64(file).then(data =>{
+        socket.emit('message', {'message': data, id:document.getElementById('receiverId').value});
+    });
+    document.getElementById('inputData').value = '';
+});
+
+socket.on('reply', (data)=>{
+    document.getElementById('message').src = data.message;
+});
+
+
+const videoElem = document.getElementById("video");
+const startElem = document.getElementById("start");
+const stopElem = document.getElementById("stop");
+var displayMediaOptions = {
+    video: {
+        cursor: "always",
+        height: 1000,
+        width: 1200
+    },
+    audio: false
+};
+// Set event listeners for the start and stop buttons
+startElem.addEventListener("click", function (evt) {
+    startCapture();
+}, false);
+stopElem.addEventListener("click", function (evt) {
+    stopCapture();
+}, false);
+var softShare = null;
+async function startCapture() {
+    try {
+        const canvas = document.createElement("canvas");
+        // Request media
+        navigator.mediaDevices.getDisplayMedia().then(stream => {
+            videoElem.srcObject = stream;
+            // console.log(stream);
+            softShare = setInterval(()=>{
+                let track = stream.getVideoTracks()[0];
+                let capture = new ImageCapture(track);
+                capture.grabFrame().then(bitmap => {
+                    // Stop sharing
+                    // track.stop();
+                    
+                    // Draw the bitmap to canvas
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+                    
+                    const frame = canvas.toDataURL("image/png");
+                    if(document.getElementById('receiverId').value != ''){
+                        socket.emit('message', {'message': frame, id:document.getElementById('receiverId').value});
+                    }
+                });
+            }, 0);
+            
+        })
+
+        
+        dumpOptionsInfo();
+    } catch (err) {
+        console.error("Error: " + err);
+    }
+}
+
+function stopCapture(evt) {
+    clearInterval(softShare)
+    let tracks = videoElem.srcObject.getTracks();
+    tracks.forEach(track => track.stop());
+    videoElem.srcObject = null;
+}
+
+function dumpOptionsInfo() {
+    const videoTrack = videoElem.srcObject.getVideoTracks()[0];
+    console.log(videoTrack)
+    console.info("Track settings:");
+    console.info(JSON.stringify(videoTrack.getSettings(), null, 2));
+    console.info("Track constraints:");
+    console.info(JSON.stringify(videoTrack.getConstraints(), null, 2));
+}
+
+</script>
